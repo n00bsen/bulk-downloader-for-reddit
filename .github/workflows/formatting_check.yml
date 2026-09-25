@@ -5,9 +5,17 @@ jobs:
   formatting_check:
     runs-on: ubuntu-latest
     steps:
-      - name: Install dependencies
-        run: sudo gem install mdl
-      - uses: actions/checkout@v3
-      - uses: paolorechia/pox@v1.0.1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          tox_env: "format_check"
+          python-version: '3.13'
+      - name: Install dependencies
+        run: |
+          sudo gem install mdl
+          python -m pip install --upgrade pip ruff
+      - name: Check lint
+        run: ruff check bdfr tests
+      - name: Check formatting
+        run: ruff format --check bdfr tests
+      - name: Check markdown
+        run: mdl README.md docs/
