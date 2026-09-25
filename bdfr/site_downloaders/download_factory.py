@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import re
 import urllib.parse
@@ -83,7 +82,7 @@ class DownloadFactory:
             "php3",
             "xhtml",
         )
-        if re.match(rf'(?i).*/.*\.({"|".join(web_extensions)})$', url):
+        if re.match(rf"(?i).*/.*\.({'|'.join(web_extensions)})$", url):
             return True
         else:
             return False

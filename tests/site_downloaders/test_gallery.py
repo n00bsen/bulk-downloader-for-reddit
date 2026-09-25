@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
+from unittest.mock import MagicMock, patch
 
 import praw
 import pytest
 
 from bdfr.exceptions import SiteDownloaderError
 from bdfr.site_downloaders.gallery import Gallery
+
+
+@pytest.mark.parametrize(("found", "incomplete"), ((["a", "b"], False), (["a"], True)))
+def test_gallery_flags_images_it_could_not_find(found: list[str], incomplete: bool):
+    """A post with an image missing must not be recorded as downloaded."""
+    post = MagicMock()
+    post.id = "abc123"
+    post.gallery_data = {"items": [{"media_id": "a"}, {"media_id": "b"}]}
+    urls = [f"https://i.redd.it/{media_id}.jpg" for media_id in found]
+    with patch.object(Gallery, "_get_links", return_value=urls):
+        downloader = Gallery(post)
+        resources = downloader.find_resources()
+    assert [res.url for res in resources] == urls
+    assert downloader.incomplete is incomplete
 
 
 @pytest.mark.online
@@ -99,6 +114,8 @@ def test_gallery_download(test_submission_id: str, expected_hashes: set[str], re
     assert set(hashes) == expected_hashes
 
 
+@pytest.mark.online
+@pytest.mark.reddit
 @pytest.mark.parametrize(
     "test_id",
     (

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import configparser
-import socket
 from pathlib import Path
 
 import praw
 import pytest
 
+from bdfr.connector import build_user_agent
 from bdfr.oauth2 import OAuth2TokenManager
 
 
@@ -16,7 +15,8 @@ def reddit_instance():
     rd = praw.Reddit(
         client_id="U-6gk4ZCh3IeNQ",
         client_secret="7CZHY6AmKweZME5s50SfDGylaPg",
-        user_agent="test",
+        user_agent=build_user_agent(),
+        check_for_updates=False,
     )
     return rd
 
@@ -34,7 +34,9 @@ def authenticated_reddit_instance():
     reddit_instance = praw.Reddit(
         client_id=cfg_parser.get("DEFAULT", "client_id"),
         client_secret=cfg_parser.get("DEFAULT", "client_secret"),
-        user_agent=socket.gethostname(),
+        # Never the hostname: this is sent to Reddit.
+        user_agent=build_user_agent(),
+        check_for_updates=False,
         token_manager=token_manager,
     )
     return reddit_instance

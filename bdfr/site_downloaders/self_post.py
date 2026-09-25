@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import logging
-from typing import Optional
 
 from praw.models import Submission
 
@@ -17,7 +15,7 @@ class SelfPost(BaseDownloader):
     def __init__(self, post: Submission):
         super().__init__(post)
 
-    def find_resources(self, authenticator: Optional[SiteAuthenticator] = None) -> list[Resource]:
+    def find_resources(self, authenticator: SiteAuthenticator | None = None) -> list[Resource]:
         out = Resource(self.post, self.post.url, lambda: None, ".txt")
         out.content = self.export_to_string().encode("utf-8")
         out.create_hash()

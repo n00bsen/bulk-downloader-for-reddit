@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import json
 import re
-from typing import Optional
 
 from praw.models import Submission
 
@@ -18,7 +16,7 @@ class Imgur(BaseDownloader):
         super().__init__(post)
         self.raw_data = {}
 
-    def find_resources(self, authenticator: Optional[SiteAuthenticator] = None) -> list[Resource]:
+    def find_resources(self, authenticator: SiteAuthenticator | None = None) -> list[Resource]:
         self.raw_data = self._get_data(self.post.url)
 
         out = []
@@ -47,7 +45,7 @@ class Imgur(BaseDownloader):
                 imgur_id = re.match(r".*/(.*?)(?:_d)?(?:\..{0,})?$", link).group(1)
                 link = f"https://api.imgur.com/3/image/{imgur_id}"
         except AttributeError:
-            raise SiteDownloaderError(f"Could not extract Imgur ID from {link}")
+            raise SiteDownloaderError(f"Could not extract Imgur ID from {link}") from None
 
         headers = {
             "referer": "https://imgur.com/",
@@ -60,6 +58,6 @@ class Imgur(BaseDownloader):
         try:
             image_dict = json.loads(res.text)
         except json.JSONDecodeError as e:
-            raise SiteDownloaderError(f"Could not parse received response as JSON: {e}")
+            raise SiteDownloaderError(f"Could not parse received response as JSON: {e}") from e
 
         return image_dict["data"]

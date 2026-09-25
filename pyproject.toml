@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "bdfr"
 description = "Downloads and archives content from reddit"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = {file = "LICENSE"}
 keywords = ["reddit", "download", "archive",]
 authors = [{name = "Ali Parlakci", email = "parlakciali@gmail.com"}]
@@ -18,16 +18,16 @@ classifiers = [
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "appdirs>=1.4.4",
     "beautifulsoup4>=4.10.0",
     "click>=8.0.0",
     "dict2xml>=1.7.0",
-    "praw>=7.2.0",
+    "praw>=7.8.1,<8",
     "pyyaml>=5.4.1",
     "requests>=2.25.1",
     "yt-dlp>=2022.11.11",
@@ -41,11 +41,9 @@ data-files = {"config" = ["bdfr/default_config.cfg",]}
 
 [project.optional-dependencies]
 dev = [
-    "black>=22.12.0",
-    "Flake8-pyproject>=1.2.2",
-    "isort>=5.11.4",
     "pre-commit>=2.20.0",
     "pytest>=7.1.0",
+    "ruff>=0.6.0",
     "tox>=3.27.1",
 ]
 
@@ -60,21 +58,20 @@ bdfr-archive = "bdfr.__main__:cli_archive"
 bdfr-clone = "bdfr.__main__:cli_clone"
 bdfr-download = "bdfr.__main__:cli_download"
 
-[tool.black]
+[project.gui-scripts]
+bdfr-gui = "bdfr.gui:main"
+
+[tool.ruff]
 line-length = 120
-
-[tool.flake8]
+target-version = "py311"
 exclude = ["scripts"]
-max-line-length = 120
-show-source = true
-statistics = true
 
-[tool.isort]
-profile = "black"
-py_version = 39
-multi_line_output = 3
-line_length = 120
-indent = 4
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bdfr"]
 
 [tool.pytest.ini_options]
 minversion = "7.1"
@@ -85,4 +82,5 @@ markers = [
     "reddit: tests require a connection to Reddit",
     "slow: test is slow to run",
     "authenticated: test requires an authenticated Reddit instance",
+    "gui: test exercises the GUI layer",
 ]

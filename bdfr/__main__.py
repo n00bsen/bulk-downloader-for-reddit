@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import logging
 import sys
@@ -12,13 +11,61 @@ from bdfr.archiver import Archiver
 from bdfr.cloner import RedditCloner
 from bdfr.completion import Completion
 from bdfr.configuration import Configuration
+from bdfr.connector import INSTALLED_APP_SECRET
+from bdfr.constants import OAUTH_REDIRECT_URI, REQUEST_TIMEOUT
 from bdfr.downloader import RedditDownloader
 
 logger = logging.getLogger()
 
+
+def _check_client_secret(context: click.Context, _param: click.Parameter, value: str | None) -> str | None:
+    """Refuse another option's name given as the client secret.
+
+    Windows PowerShell 5.1 silently drops an empty argument, so there
+    `--client-secret "" --submitted` takes --submitted as the secret. The run
+    would then use a bogus secret and, with that option lost, could finish
+    having downloaded nothing and without saying why.
+    """
+    if value is None:
+        return value
+    option_names = {name for param in context.command.params for name in (*param.opts, *param.secondary_opts)}
+    if value.strip() in option_names:
+        raise click.BadParameter(
+            f"got the option {value.strip()} instead of a secret. For an installed app, which has no secret, "
+            f"pass --client-secret {INSTALLED_APP_SECRET}"
+        )
+    return value
+
+
 _common_options = [
     click.argument("directory", type=str),
     click.option("--authenticate", is_flag=True, default=None),
+    click.option(
+        "--client-id",
+        type=str,
+        default=None,
+        help=(
+            "Client ID of your own Reddit app, used instead of the one in the config file. "
+            f"For --authenticate the app's redirect URI must be {OAUTH_REDIRECT_URI}."
+        ),
+    ),
+    click.option(
+        "--client-secret",
+        type=str,
+        default=None,
+        callback=_check_client_secret,
+        help=(
+            "Secret of the app given with --client-id. Required with --client-id unless the app is an "
+            f"installed app or its ID is the one in the config file; pass {INSTALLED_APP_SECRET} to force "
+            "installed-app mode."
+        ),
+    ),
+    click.option(
+        "--concurrency",
+        type=click.IntRange(min=1),
+        default=None,
+        help="Number of resources to fetch at once. 1 disables concurrency.",
+    ),
     click.option("--config", type=str, default=None),
     click.option("--disable-module", multiple=True, default=None, type=str),
     click.option("--exclude-id", default=None, multiple=True),
@@ -30,12 +77,19 @@ _common_options = [
     click.option("--include-id-file", multiple=True, default=None),
     click.option("--log", type=str, default=None),
     click.option("--opts", type=str, default=None),
+    click.option(
+        "--reddit-username",
+        type=str,
+        default=None,
+        help="Your Reddit username. Only used to build the User-Agent Reddit asks API clients to send.",
+    ),
     click.option("--saved", is_flag=True, default=None),
     click.option("--search", default=None, type=str),
     click.option("--submitted", is_flag=True, default=None),
     click.option("--subscribed", is_flag=True, default=None),
     click.option("--time-format", type=str, default=None),
     click.option("--upvoted", is_flag=True, default=None),
+    click.option("--user-agent", type=str, default=None, help="Send this User-Agent to Reddit instead of the default."),
     click.option("-L", "--limit", default=None, type=int),
     click.option("-l", "--link", multiple=True, default=None, type=str),
     click.option("-m", "--multireddit", multiple=True, default=None, type=str),
@@ -52,6 +106,15 @@ _downloader_options = [
     click.option("--make-hard-links", is_flag=True, default=None),
     click.option("--max-wait-time", type=int, default=None),
     click.option("--no-dupes", is_flag=True, default=None),
+    click.option(
+        "--recheck",
+        is_flag=True,
+        default=None,
+        help=(
+            "Check again the posts that an earlier run with the same settings downloaded in full, "
+            "instead of skipping them. Restores files deleted since."
+        ),
+    ),
     click.option("--search-existing", is_flag=True, default=None),
     click.option("--skip", default=None, multiple=True),
     click.option("--skip-domain", default=None, multiple=True),
@@ -82,7 +145,7 @@ def _check_version(context, param, value):
     if not value or context.resilient_parsing:
         return
     current = __version__
-    latest = requests.get("https://pypi.org/pypi/bdfr/json").json()["info"]["version"]
+    latest = requests.get("https://pypi.org/pypi/bdfr/json", timeout=REQUEST_TIMEOUT).json()["info"]["version"]
     print(f"You are currently using v{current} the latest is v{latest}")
     context.exit()
 

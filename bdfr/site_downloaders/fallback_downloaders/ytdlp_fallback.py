@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import logging
-from typing import Optional
 
 from praw.models import Submission
 
@@ -17,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 class YtdlpFallback(BaseFallbackDownloader, Youtube):
     def __init__(self, post: Submission):
-        super(YtdlpFallback, self).__init__(post)
+        super().__init__(post)
 
-    def find_resources(self, authenticator: Optional[SiteAuthenticator] = None) -> list[Resource]:
+    def find_resources(self, authenticator: SiteAuthenticator | None = None) -> list[Resource]:
         out = Resource(
             self.post,
             self.post.url,

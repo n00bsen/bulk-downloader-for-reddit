@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import praw
 import pytest
@@ -28,7 +27,7 @@ def test_get_comment_details(test_comment_id: str, expected_dict: dict, reddit_i
     comment = reddit_instance.comment(id=test_comment_id)
     test_entry = CommentArchiveEntry(comment)
     result = test_entry.compile()
-    assert all([result.get(key) == expected_dict[key] for key in expected_dict.keys()])
+    assert all(result.get(key) == expected_dict[key] for key in expected_dict.keys())
 
 
 @pytest.mark.online

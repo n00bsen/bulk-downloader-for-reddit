@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import logging
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Optional
 
 import yt_dlp
 from praw.models import Submission
@@ -22,7 +20,7 @@ class Youtube(BaseDownloader):
     def __init__(self, post: Submission):
         super().__init__(post)
 
-    def find_resources(self, authenticator: Optional[SiteAuthenticator] = None) -> list[Resource]:
+    def find_resources(self, authenticator: SiteAuthenticator | None = None) -> list[Resource]:
         ytdl_options = {
             "format": "best",
             "playlistend": 1,
@@ -33,27 +31,46 @@ class Youtube(BaseDownloader):
         res = Resource(self.post, self.post.url, download_function, extension)
         return [res]
 
-    def _download_video(self, ytdl_options: dict) -> Callable:
+    def _download_video(
+        self, ytdl_options: dict, url: str | None = None, extra_formats: Sequence[dict] = ()
+    ) -> Callable:
+        """Return a download function that fetches `url` (the post's URL by default) with yt-dlp.
+
+        Subclasses pass `url` when they know a better address for the media
+        than the post link, such as a stream manifest, and `extra_formats` for
+        streams they know of that the URL's extraction does not list. yt-dlp
+        then chooses among all of them as usual.
+        """
         yt_logger = logging.getLogger("youtube-dl")
         yt_logger.setLevel(logging.CRITICAL)
         ytdl_options["quiet"] = True
         ytdl_options["logger"] = yt_logger
 
         def download(_: dict) -> bytes:
+            target_url = self.post.url if url is None else url
             with tempfile.TemporaryDirectory() as temp_dir:
                 download_path = Path(temp_dir).resolve()
                 ytdl_options["outtmpl"] = str(download_path) + "/" + "test.%(ext)s"
                 try:
                     with yt_dlp.YoutubeDL(ytdl_options) as ydl:
-                        ydl.download([self.post.url])
-                except yt_dlp.DownloadError as e:
-                    raise SiteDownloaderError(f"Youtube download failed: {e}")
+                        if extra_formats:
+                            # yt-dlp takes no formats from the caller, so extract without
+                            # processing, add them, then let it select and download.
+                            info = ydl.extract_info(target_url, download=False, process=False)
+                            info["formats"] = [*info.get("formats", ()), *extra_formats]
+                            ydl.process_ie_result(info, download=True)
+                        else:
+                            ydl.download([target_url])
+                # Unlike download(), process_ie_result() raises yt-dlp's specific
+                # errors unwrapped; DownloadError shares their base class.
+                except yt_dlp.utils.YoutubeDLError as e:
+                    raise SiteDownloaderError(f"Youtube download failed: {e}") from e
 
                 downloaded_files = list(download_path.iterdir())
                 if downloaded_files:
                     downloaded_file = downloaded_files[0]
                 else:
-                    raise NotADownloadableLinkError(f"No media exists in the URL {self.post.url}")
+                    raise NotADownloadableLinkError(f"No media exists in the URL {target_url}")
                 with downloaded_file.open("rb") as file:
                     content = file.read()
                 return content
@@ -73,7 +90,7 @@ class Youtube(BaseDownloader):
                 result = ydl.extract_info(url, download=False)
             except Exception as e:
                 logger.exception(e)
-                raise NotADownloadableLinkError(f"Video info extraction failed for {url}")
+                raise NotADownloadableLinkError(f"Video info extraction failed for {url}") from e
         return result
 
     @staticmethod

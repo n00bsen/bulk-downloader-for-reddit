@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import praw
 import pytest
@@ -44,4 +43,4 @@ def test_get_post_details(test_submission_id: str, expected_dict: dict, reddit_i
     test_submission = reddit_instance.submission(id=test_submission_id)
     test_archive_entry = SubmissionArchiveEntry(test_submission)
     test_archive_entry._get_post_details()
-    assert all([test_archive_entry.post_details.get(key) == expected_dict[key] for key in expected_dict.keys()])
+    assert all(test_archive_entry.post_details.get(key) == expected_dict[key] for key in expected_dict.keys())

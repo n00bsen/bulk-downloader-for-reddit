@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 from unittest.mock import Mock
 
@@ -57,7 +56,7 @@ def test_find_resources(test_url: str, expected_hashes: list[str]):
     mock_download.url = test_url
     downloader = Imgur(mock_download)
     results = downloader.find_resources()
-    assert all([isinstance(res, Resource) for res in results])
+    assert all(isinstance(res, Resource) for res in results)
     [res.download() for res in results]
-    hashes = set([res.hash.hexdigest() for res in results])
+    hashes = {res.hash.hexdigest() for res in results}
     assert hashes == set(expected_hashes)

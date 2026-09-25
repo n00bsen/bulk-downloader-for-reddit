@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import logging
-from typing import Optional
 
 from praw.models import Submission
 
@@ -17,6 +15,6 @@ class DelayForReddit(BaseDownloader):
     def __init__(self, post: Submission):
         super().__init__(post)
 
-    def find_resources(self, authenticator: Optional[SiteAuthenticator] = None) -> list[Resource]:
+    def find_resources(self, authenticator: SiteAuthenticator | None = None) -> list[Resource]:
         media = DelayForReddit.retrieve_url(self.post.url)
         return [Resource(self.post, media.url, Resource.retry_download(media.url))]

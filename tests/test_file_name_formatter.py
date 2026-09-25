@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import platform
 import sys
 import unittest.mock
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
 from unittest.mock import MagicMock
 
 import praw.models
@@ -43,7 +41,7 @@ def check_valid_windows_path(test_string: str):
     return test_string == FileNameFormatter._format_for_windows(test_string)
 
 
-def do_test_string_equality(result: Union[Path, str], expected: str) -> bool:
+def do_test_string_equality(result: Path | str, expected: str) -> bool:
     if platform.system() == "Windows":
         expected = FileNameFormatter._format_for_windows(expected)
     return str(result).endswith(expected)
@@ -125,7 +123,7 @@ def test_format_name_real(
     test_format_string: str,
     expected: str,
     reddit_submission: praw.models.Submission,
-    restriction_scheme: Optional[str],
+    restriction_scheme: str | None,
 ):
     test_formatter = FileNameFormatter(test_format_string, "", "", restriction_scheme)
     result = test_formatter._format_name(reddit_submission, test_format_string)
@@ -202,7 +200,7 @@ def test_format_full_conform(
 def test_format_full_with_index_suffix(
     format_string_directory: str,
     format_string_file: str,
-    index: Optional[int],
+    index: int | None,
     expected: str,
     reddit_submission: praw.models.Submission,
 ):
@@ -223,7 +221,7 @@ def test_format_multiple_resources():
         mocks.append(new_mock)
     test_formatter = FileNameFormatter("{TITLE}", "", "ISO")
     results = test_formatter.format_resource_paths(mocks, Path())
-    results = set([str(res[0].name) for res in results])
+    results = {str(res[0].name) for res in results}
     expected = {"test_1.png", "test_2.png", "test_3.png", "test_4.png"}
     assert results == expected
 
@@ -349,7 +347,7 @@ def test_generate_dict_for_submission(test_submission_id: str, expected: dict, r
     test_submission = reddit_instance.submission(id=test_submission_id)
     test_formatter = FileNameFormatter("{TITLE}", "", "ISO")
     result = test_formatter._generate_name_dict_from_submission(test_submission)
-    assert all([result.get(key) == expected[key] for key in expected.keys()])
+    assert all(result.get(key) == expected[key] for key in expected.keys())
 
 
 @pytest.mark.online
@@ -372,7 +370,7 @@ def test_generate_dict_for_comment(test_comment_id: str, expected: dict, reddit_
     test_comment = reddit_instance.comment(id=test_comment_id)
     test_formatter = FileNameFormatter("{TITLE}", "", "ISO")
     result = test_formatter._generate_name_dict_from_comment(test_comment)
-    assert all([result.get(key) == expected[key] for key in expected.keys()])
+    assert all(result.get(key) == expected[key] for key in expected.keys())
 
 
 @pytest.mark.online
@@ -517,5 +515,5 @@ def test_name_submission(
     test_resources = test_downloader(test_submission).find_resources()
     test_formatter = FileNameFormatter("{TITLE}", "", "")
     results = test_formatter.format_resource_paths(test_resources, Path())
-    results = set([r[0].name for r in results])
+    results = {r[0].name for r in results}
     assert results == expected_names
