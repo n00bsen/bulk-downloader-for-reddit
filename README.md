@@ -16,7 +16,7 @@ Included in this README are a few example Bash tricks to get certain behaviour. 
 
 ## Installation
 
-*Bulk Downloader for Reddit* needs Python version 3.9 or above. Please update Python before installation to meet the requirement.
+*Bulk Downloader for Reddit* needs Python version 3.11 or above. Please update Python before installation to meet the requirement.
 
 Then, you can install it via pip with:
 
@@ -35,6 +35,27 @@ python3 -m pipx install bdfr
 **To check your version of BDFR**, run `bdfr --version`
 
 **To install shell completions**, run `bdfr completions`
+
+## Desktop Application
+
+BDFR ships with a small desktop window that queues several downloads at once, which is the easiest way to use it on Windows. Launch it with:
+
+```bash
+bdfr-gui
+```
+
+Enter one username (or subreddit) per line, pick the output folder, and press **Start downloads**. Each name is downloaded as its own job in its own process, several at a time, with live per-job progress and a cancel button. Every option is saved between runs, so the window opens ready to go.
+
+Two separate settings control speed:
+
+- **Simultaneous downloads** — how many users/subreddits are processed at the same time.
+- **Connections per download** — how many files are fetched at once within a single job (the `--concurrency` option).
+
+Downloading the same users again is quick: posts that were already downloaded in full are skipped without contacting their hosts, and the job's last message says how many. A file you delete by hand is therefore not downloaded again unless **Re-check posts already downloaded** is ticked for that run. See [Skipping Posts Already Downloaded](#skipping-posts-already-downloaded).
+
+The optional **Reddit API** section takes the client ID and secret of your own Reddit app and your Reddit username. See [Using Your Own Reddit App](#using-your-own-reddit-app).
+
+The window needs no server and no browser; it is a plain desktop application built on Tkinter, which ships with Python.
 
 ### AUR Package
 
@@ -132,6 +153,18 @@ The following options are common between both the `archive` and `download` comma
 - `--authenticate`
     - This flag will make the BDFR attempt to use an authenticated Reddit session
     - See [Authentication](#authentication-and-security) for more details
+- `--client-id`
+    - The client ID of your own Reddit app, used instead of the one in the configuration file
+    - See [Using Your Own Reddit App](#using-your-own-reddit-app)
+- `--client-secret`
+    - The secret of the app given with `--client-id`
+    - Leave it out for an installed app, which has no secret, or when `--client-id` is the ID already in the configuration file
+    - Pass `none` to force installed-app mode. Do not use `""` for this: Windows PowerShell 5.1 drops empty arguments
+- `--concurrency`
+    - Sets how many files are downloaded at the same time within a single run
+    - Default: 4
+    - Use `1` for the strictly sequential behaviour of earlier versions
+    - See [Downloading Several Files at Once](#downloading-several-files-at-once) for more details
 - `--config`
     - If the path to a configuration file is supplied with this option, the BDFR will use the specified config
     - See [Configuration Files](#configuration) for more details
@@ -157,6 +190,8 @@ The following options are common between both the `archive` and `download` comma
 - `--log`
     - This allows one to specify the location of the logfile
     - This must be done when running multiple instances of the BDFR, see [Multiple Instances](#multiple-instances) below
+- `--reddit-username`
+    - Your Reddit username, used only to build the User-Agent sent to Reddit, e.g. `windows:bdfr:2.6.2 (by /u/you)`
 - `--saved`
     - This option will make the BDFR use the supplied user's saved posts list as a download source
     - This requires an authenticated Reddit instance, using the `--authenticate` flag, as well as `--user` set to `me`
@@ -169,6 +204,9 @@ The following options are common between both the `archive` and `download` comma
 - `--upvoted`
     - This will use a user's upvoted posts as a source of posts to scrape
     - This requires an authenticated Reddit instance, using the `--authenticate` flag, as well as `--user` set to `me`
+- `--user-agent`
+    - Sends this exact User-Agent to Reddit instead of the one the BDFR builds
+    - Reddit asks for the form `<platform>:<app ID>:<version> (by /u/<username>)`
 - `-L, --limit`
     - This is the limit on the number of submissions retrieve
     - Default is max possible
@@ -235,6 +273,9 @@ The following options apply only to the `download` command. This command downloa
 - `--no-dupes`
     - This flag will not redownload files if they were already downloaded in the current run
     - This is calculated by MD5 hash
+- `--recheck`
+    - Looks at posts again that an earlier run already downloaded in full, instead of skipping them
+    - Use it to restore files deleted by hand; see [Skipping Posts Already Downloaded](#skipping-posts-already-downloaded)
 - `--search-existing`
     - This will make the BDFR compile the hashes for every file in `directory`
     - The hashes are used to remove duplicates if `--no-dupes` is supplied or make hard links if `--make-hard-links` is supplied
@@ -272,6 +313,16 @@ The following options apply only to the `download` command. This command downloa
     - This skips all submissions which have lower than specified upvote ratio
 - `--max-score-ratio`
     - This skips all submissions which have higher than specified upvote ratio
+
+#### Skipping Posts Already Downloaded
+
+Whether a post's files are already on disk can only be decided once the file name is known, and the name depends on the extension the host reports. Finding that out is network work: a yt-dlp extraction for a video, an API call for Redgifs, a request per image for a Reddit gallery. To avoid repeating it for every post each time the same user or subreddit is downloaded again, the `download` command remembers which posts it has handled in full, and later runs skip them before making any request for them.
+
+- A post is remembered only when every one of its files was written, already existed, was left out by `--skip` or `--skip-domain`, or was skipped or hard-linked as a duplicate by `--no-dupes` or `--make-hard-links`. A post with any failure is not remembered and is tried again on the next run.
+- The list is kept in `<directory>/.bdfr/records/`, one file per combination of the settings that decide which files a post produces and where: `--folder-scheme`, `--file-scheme`, `--filename-restriction-scheme`, the time format, `--skip`, `--skip-domain`, `--disable-module`, `--no-dupes` and `--make-hard-links`. Different workflows writing into the same folder, such as users sorted by `{REDDITOR}` and a subreddit's videos sorted by `{SUBREDDIT}`, therefore never hide each other's posts. Each list has a `.json` file beside it naming its settings.
+- The first run with a set of settings, including the first run after upgrading, checks every post as before and remembers what it finds on disk. From then on, re-runs skip remembered posts immediately and end with a line such as `Skipped 57 posts already downloaded`.
+- A file deleted by hand is **not** downloaded again, because its post is skipped. Run with `--recheck` to check every post again; posts are still remembered during such a run. Deleting a record file has the same effect for its settings.
+- The `clone` command neither skips nor remembers posts, since it also writes an archive entry for every post.
 
 ### Archiver Options
 
@@ -313,6 +364,24 @@ The BDFR uses OAuth2 authentication to connect to Reddit if authentication is re
 To authenticate, the BDFR will first look for a token in the configuration file that signals that there's been a previous authentication. If this is not there, then the BDFR will attempt to register itself with your account. This is normal, and if you run the program, it will pause and show a Reddit URL. Click on this URL and it will take you to Reddit, where the permissions being requested will be shown. Read this and **confirm that there are no more permissions than needed to run the program**. You should not grant unneeded permissions; by default, the BDFR only requests permission to read your saved or upvoted submissions and identify as you.
 
 If the permissions look safe, confirm it, and the BDFR will save a token that will allow it to authenticate with Reddit from then on.
+
+### Using Your Own Reddit App
+
+By default the BDFR uses the Reddit app named in its [configuration file](#configuration), which is the app bundled with the BDFR unless you have put your own there. Every BDFR user in the world shares the bundled app's rate limit, so downloads slow down or stall when it is busy. Your own app gives you a rate limit of your own. Reddit now reviews new API apps before approving them, so check its current Data API rules first:
+
+1. Go to <https://www.reddit.com/prefs/apps> and create an app.
+    - Choose **installed app**, which has no secret, or **script**, which comes with one. Both work.
+    - Set the **redirect uri** to `http://localhost:7634`. `--authenticate` needs exactly this URI.
+2. Copy the client ID, which is the string under the app's name, and the secret if there is one.
+3. Pass them with `--client-id` and `--client-secret`, or enter them in the desktop application's **Reddit API (optional)** section. Leave them blank there to use the app from the configuration file.
+
+Also give your Reddit username with `--reddit-username`, or in the desktop application, so that the User-Agent says who is making the requests, as Reddit's API rules ask. The BDFR never sends your computer's name.
+
+If Reddit rejects the client ID or secret, the BDFR stops at the first request with a message that says so, instead of trying each user in turn. The usual cause is an app type mismatch: a script or web app needs its secret, and an installed app has none.
+
+A saved login (`user_token` in the configuration file) only works with the app that created it. If you switch apps with `--authenticate` on, the BDFR stops with a message that says so. To log in with the new app, delete the `user_token` line from the configuration file and run the BDFR once from a terminal with `--authenticate` and the new app's `--client-id` and `--client-secret`, or without `--client-id` to use the bundled app again.
+
+The desktop application keeps these values, including the secret, in plain text in `gui_settings.json` in the configuration directory, next to `config.cfg`, which already holds the bundled secret and any login token.
 
 ## Changing Permissions
 
@@ -423,9 +492,21 @@ The BDFR can be run in multiple instances with multiple configurations, either c
 
 Running these scenarios consecutively is done easily, like any single run. Configuration files that differ may be specified with the `--config` option to switch between tokens, for example. Otherwise, almost all configuration for data sources can be specified per-run through the command line.
 
-Running scenarios concurrently (at the same time) however, is more complicated. The BDFR will look to a single, static place to put the detailed log files, in a directory with the configuration file specified above. If there are multiple instances, or processes, of the BDFR running at the same time, they will all be trying to write to a single file. On Linux and other UNIX based operating systems, this will succeed, though there is a substantial risk that the logfile will be useless due to garbled and jumbled data. On Windows however, attempting this will raise an error that crashes the program as Windows forbids multiple processes from accessing the same file.
+Running scenarios concurrently (at the same time) is supported directly. Each process writes to its own logfile by default (`log_output.<pid>.txt` in the configuration directory), so instances no longer fight over a single file, and writes to the configuration file are serialised with a lock and applied atomically so that concurrent runs cannot corrupt it or lose a stored OAuth token.
 
-The way to fix this is to use the `--log` option to manually specify where the logfile is to be stored. If the given location is unique to each instance of the BDFR, then it will run fine.
+If you want a specific logfile location, pass `--log`. Note that an explicitly given path is used exactly as supplied, so give each instance a unique one if you run several at the same time.
+
+The simplest way to run many downloads at once is the [desktop application](#desktop-application), which manages the processes for you.
+
+### Downloading Several Files at Once
+
+Within a single run, `--concurrency N` controls how many files are fetched in parallel. It defaults to 4. Use `--concurrency 1` to restore the older, strictly sequential behaviour.
+
+```bash
+bdfr download ./path --user me --submitted --concurrency 8
+```
+
+All Reddit API traffic is serialised internally regardless of this setting, so raising it puts load on the media hosts rather than on Reddit.
 
 ## Filesystem Restrictions
 
