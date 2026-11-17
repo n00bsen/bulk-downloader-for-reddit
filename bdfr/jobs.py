@@ -10,6 +10,9 @@ sharing mutable state.
 Progress is reported back over a `multiprocessing.Queue` as `JobEvent`s. The
 child forwards its log records, which already carry structured markers for
 completed submissions, so no log-message parsing is needed.
+
+The other direction is one shared integer per job: the number of resources the
+job may fetch at once, which the parent can change while the job is running.
 """
 
 import logging
@@ -22,9 +25,14 @@ from enum import StrEnum
 from typing import Any
 
 from bdfr.configuration import Configuration
-from bdfr.constants import DEFAULT_MAX_PARALLEL_JOBS
+from bdfr.constants import DEFAULT_CONCURRENCY, DEFAULT_MAX_PARALLEL_JOBS, MAX_CONCURRENCY, MAX_PARALLEL_JOBS
 
 logger = logging.getLogger(__name__)
+
+
+def _clamp_concurrency(value: int) -> int:
+    """Bring a requested concurrency into the range a running job can follow."""
+    return max(1, min(MAX_CONCURRENCY, int(value)))
 
 
 class JobState(StrEnum):
@@ -68,6 +76,9 @@ class Job:
     completed: int = 0
     last_message: str = ""
     process: Any = field(default=None, repr=False)
+    # The job's concurrency, shared with its process so that it can be changed
+    # while the job runs. None before the job starts and after it has ended.
+    live_concurrency: Any = field(default=None, repr=False)
 
     @property
     def is_active(self) -> bool:
@@ -124,12 +135,16 @@ class _QueueLogHandler(logging.Handler):
             self.handleError(record)
 
 
-def run_job(job_id: str, config: Configuration, event_queue: Any) -> None:
+def run_job(job_id: str, config: Configuration, event_queue: Any, live_concurrency: Any = None) -> None:
     """Entry point executed in the child process.
 
     The downloader is imported here rather than at module scope so that the
     parent process (notably the GUI) does not pay for PRAW and yt-dlp imports
     it never uses.
+
+    `live_concurrency` is the shared integer the parent changes to adjust the
+    job's concurrency while it runs; without one the job keeps the concurrency
+    in `config` for its whole run.
     """
     from bdfr.downloader import RedditDownloader
 
@@ -144,6 +159,8 @@ def run_job(job_id: str, config: Configuration, event_queue: Any) -> None:
     event_queue.put(JobEvent(job_id=job_id, kind=EventKind.STATE, state=JobState.RUNNING))
     try:
         downloader = RedditDownloader(config, [])
+        if live_concurrency is not None:
+            downloader.live_concurrency = lambda: live_concurrency.value
         downloader.download()
     except BaseException as e:
         event_queue.put(
@@ -174,7 +191,7 @@ class JobManager:
     def __init__(
         self,
         max_parallel: int = DEFAULT_MAX_PARALLEL_JOBS,
-        job_target: Callable[[str, Configuration, Any], None] = run_job,
+        job_target: Callable[[str, Configuration, Any, Any], None] = run_job,
     ):
         self.max_parallel = max(1, int(max_parallel))
         # The target is injectable so the scheduler can be exercised without
@@ -192,6 +209,32 @@ class JobManager:
         self.jobs[job.job_id] = job
         self._order.append(job.job_id)
         return job
+
+    def set_max_parallel(self, max_parallel: int) -> None:
+        """Change how many jobs may run at once; takes effect on the next pump.
+
+        Raising it starts more queued jobs. Lowering it stops nothing: running
+        jobs carry on, and queued ones wait until fewer than the new limit run.
+        A raise can therefore not be taken back, which is why the number is
+        kept between 1 and `MAX_PARALLEL_JOBS` whatever is asked for.
+        """
+        self.max_parallel = max(1, min(MAX_PARALLEL_JOBS, int(max_parallel)))
+
+    def set_concurrency(self, concurrency: int) -> None:
+        """Change how many resources each job fetches at once, running jobs included.
+
+        A running job follows by itself: it looks at the number again before
+        every submission it starts, and several times a second while one is
+        waiting for its turn. Lowering it interrupts no transfer that is
+        already under way. The number is kept between 1 and `MAX_CONCURRENCY`.
+        """
+        value = _clamp_concurrency(concurrency)
+        for job in self.jobs.values():
+            if job.state is JobState.PENDING:
+                # Read when the job is launched, to initialise its shared value.
+                job.config.concurrency = value
+            elif job.live_concurrency is not None:
+                job.live_concurrency.value = value
 
     @property
     def ordered_jobs(self) -> list[Job]:
@@ -252,6 +295,7 @@ class JobManager:
                     job.last_message = f"Exited with code {process.exitcode}"
             process.join(timeout=0)
             job.process = None
+            job.live_concurrency = None
 
     def _launch_pending(self) -> None:
         for job in self.ordered_jobs:
@@ -261,12 +305,19 @@ class JobManager:
                 continue
             job.state = JobState.RUNNING
             job.last_message = "Starting"
+            # Shared without a lock. One integer is read and written whole, and
+            # a lock could be left held by a job that is terminated while
+            # reading, which would freeze the window at the next change.
+            # An unset concurrency means the default, as it does to the downloader.
+            job.live_concurrency = self._context.Value(
+                "i", _clamp_concurrency(job.config.concurrency or DEFAULT_CONCURRENCY), lock=False
+            )
             # Deliberately not daemonic: a download started with
             # --search-existing creates its own process pool for hashing, and
             # daemonic processes are not allowed to have children.
             job.process = self._context.Process(
                 target=self.job_target,
-                args=(job.job_id, job.config, self._queue),
+                args=(job.job_id, job.config, self._queue, job.live_concurrency),
                 name=f"bdfr-job-{job.label}",
                 daemon=False,
             )
@@ -306,6 +357,7 @@ class JobManager:
                 process.kill()
                 process.join(timeout=timeout)
             job.process = None
+            job.live_concurrency = None
         try:
             self._queue.close()
             self._queue.join_thread()

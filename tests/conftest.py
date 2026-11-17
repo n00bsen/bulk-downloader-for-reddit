@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import configparser
+import sys
 from pathlib import Path
 
 import praw
@@ -40,3 +41,54 @@ def authenticated_reddit_instance():
         token_manager=token_manager,
     )
     return reddit_instance
+
+
+@pytest.fixture(scope="session", autouse=True)
+def no_visible_windows():
+    """Keep the GUI tests from flashing windows on the screen of whoever runs them.
+
+    Every Tk window is made fully transparent, and kept off the taskbar, the
+    moment it is created and before the event loop can draw it. It still has
+    to be a real, mapped window: Tk only tracks focus and mouse positions for
+    those, so simply withdrawing it would break the tests that click and
+    paste. Pop-up menus and dialogs are blocked: a real one would also wait
+    for a person.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+    except ImportError:
+        yield
+        return
+
+    patch = pytest.MonkeyPatch()
+
+    def invisible_after_init(cls):
+        original_init = cls.__init__
+
+        def init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            try:
+                self.attributes("-alpha", 0.0)
+                if sys.platform == "win32":
+                    self.attributes("-toolwindow", True)
+            except tk.TclError:
+                # Not every window system supports these; the tests still run.
+                pass
+
+        patch.setattr(cls, "__init__", init)
+
+    def blocked(name):
+        def dialog(*args, **kwargs):
+            raise AssertionError(f"{name} would open a dialog during a test; stub it")
+
+        return dialog
+
+    invisible_after_init(tk.Tk)
+    invisible_after_init(tk.Toplevel)
+    patch.setattr(tk.Menu, "tk_popup", lambda self, *args, **kwargs: None)
+    for name in ("showinfo", "showwarning", "showerror", "askokcancel", "askyesno", "askyesnocancel"):
+        patch.setattr(messagebox, name, blocked(f"messagebox.{name}"))
+    patch.setattr(filedialog, "askdirectory", blocked("filedialog.askdirectory"))
+    yield
+    patch.undo()

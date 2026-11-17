@@ -5,7 +5,7 @@ import logging.handlers
 import os
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from multiprocessing import Pool
 from pathlib import Path
@@ -49,6 +49,10 @@ class RedditDownloader(RedditConnector):
     # recorded. RedditCloner turns this off because it also writes an archive
     # entry for every post, which a skip would silently leave out.
     uses_download_record = True
+    # Returns the number of resources to fetch at once as it is right now, for a
+    # run whose limit can be changed while it is under way: the GUI's job runner
+    # sets this. None leaves the limit fixed at `concurrency` for the whole run.
+    live_concurrency: Callable[[], int] | None = None
 
     def __init__(self, args: Configuration, logging_handlers: Iterable[logging.Handler] = ()):
         super().__init__(args, logging_handlers)
@@ -79,15 +83,20 @@ class RedditDownloader(RedditConnector):
         return max(1, int(value))
 
     def download(self):
-        if self.concurrency == 1:
+        live_concurrency = self.live_concurrency
+        # A limit that can change always takes the pipeline: the sequential path
+        # could not pick up a limit that starts at 1 and is raised later.
+        if live_concurrency is None and self.concurrency == 1:
             self._download_sequentially()
         else:
-            logger.info(f"Downloading with {self.concurrency} concurrent workers")
+            # A limit that can change is announced by the pipeline instead, which knows its current value.
+            if live_concurrency is None:
+                logger.info(f"Downloading with {self.concurrency} concurrent workers")
             make_reddit_instance_thread_safe(self.reddit_instance)
             stats = process_submissions(
                 self.reddit_lists,
                 handler=self._download_submission_resources,
-                concurrency=self.concurrency,
+                concurrency=self.concurrency if live_concurrency is None else live_concurrency,
                 prepare=self._should_download_submission,
                 describe=lambda submission: str(getattr(submission, "id", "unknown")),
             )

@@ -16,8 +16,19 @@ REQUEST_TIMEOUT = (CONNECT_TIMEOUT, READ_TIMEOUT)
 # Default number of worker threads fetching resources within a single job.
 DEFAULT_CONCURRENCY = 4
 
+# Most worker threads a job whose limit can be changed while it runs will ever
+# use. Its thread pool has to be sized before the run starts, so this is also
+# the upper bound of the GUI's "Connections per download" setting.
+MAX_CONCURRENCY = 32
+
 # Default number of jobs the GUI runs simultaneously.
 DEFAULT_MAX_PARALLEL_JOBS = 3
+
+# Most jobs the GUI runs simultaneously: the upper bound of its "Simultaneous
+# downloads" setting. Each job is a process of its own with its own Reddit
+# session, and a job that has been started is not stopped again by lowering the
+# setting, so a mistyped number must not be able to start dozens of them.
+MAX_PARALLEL_JOBS = 16
 
 # Where Reddit sends the browser back to after an OAuth2 login. BDFR listens on
 # this port during --authenticate, so a user's own Reddit app must be registered

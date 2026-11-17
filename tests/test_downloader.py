@@ -44,6 +44,9 @@ def downloader_mock(args: Configuration):
     # No record unless a test asks for one, so nothing is skipped or recorded.
     downloader_mock.download_record = None
     downloader_mock._already_downloaded_skips = 0
+    # The limit is fixed unless a test says otherwise; left to the mock, the
+    # attribute would be truthy and read as a limit that can change.
+    downloader_mock.live_concurrency = None
     # Bind the real download stages; _download_submission only orchestrates them.
     downloader_mock._should_download_submission = lambda submission: RedditDownloader._should_download_submission(
         downloader_mock, submission
@@ -761,6 +764,90 @@ def test_download_summarises_skipped_posts(
     ]
     if concurrency > 1:
         assert "1 submissions processed, 0 filtered out, 0 failed" in caplog.text
+
+
+def test_live_concurrency_defaults_to_a_fixed_limit():
+    assert RedditDownloader.live_concurrency is None
+
+
+@patch("bdfr.downloader.process_submissions")
+def test_download_without_a_live_limit_stays_sequential_at_one(mock_pipeline: MagicMock, downloader_mock: MagicMock):
+    downloader_mock.concurrency = 1
+
+    RedditDownloader.download(downloader_mock)
+
+    downloader_mock._download_sequentially.assert_called_once_with()
+    mock_pipeline.assert_not_called()
+
+
+@pytest.mark.parametrize("configured", (1, 4))
+@patch("bdfr.downloader.process_submissions")
+def test_download_with_a_live_limit_always_uses_the_pipeline(
+    mock_pipeline: MagicMock, configured: int, downloader_mock: MagicMock
+):
+    """A limit of 1 may be raised later, which the sequential path could not follow."""
+
+    def live_limit() -> int:
+        return 1
+
+    mock_pipeline.return_value.skipped = 0
+    downloader_mock.concurrency = configured
+    downloader_mock.live_concurrency = live_limit
+
+    RedditDownloader.download(downloader_mock)
+
+    downloader_mock._download_sequentially.assert_not_called()
+    assert mock_pipeline.call_args.kwargs["concurrency"] is live_limit
+
+
+@patch("bdfr.downloader.DownloadFactory.pull_lever")
+def test_download_with_a_live_limit_of_one_downloads_every_submission(
+    mock_pull_lever: MagicMock, downloader_mock: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    caplog.set_level(logging.INFO)
+    _prepare_downloader_for_offline_download(downloader_mock, tmp_path)
+    submissions = [_make_fake_submission(f"id{i:04d}") for i in range(6)]
+    downloader_mock.file_name_formatter.format_resource_paths.side_effect = lambda resources, _directory: [
+        (tmp_path / res.url.rsplit("/", 1)[-1], res) for res in resources
+    ]
+    downloader_class = MagicMock()
+    downloader_class.__name__ = "Direct"
+    mock_pull_lever.return_value = downloader_class
+    counter = iter(range(len(submissions)))
+
+    def find_resources(_authenticator):
+        resource = MagicMock()
+        resource.url = f"https://example.com/{next(counter)}.png"
+        resource.content = b"payload"
+        resource.hash.hexdigest.return_value = resource.url
+        return [resource]
+
+    downloader_class.return_value.find_resources.side_effect = find_resources
+    downloader_mock.concurrency = 1
+    downloader_mock.live_concurrency = lambda: 1
+    downloader_mock.reddit_lists = [submissions]
+
+    # On a thread of its own, so that a download that never ends fails this test instead of hanging the session.
+    failures = []
+
+    def download() -> None:
+        try:
+            RedditDownloader.download(downloader_mock)
+        except BaseException as e:
+            failures.append(e)
+
+    thread = threading.Thread(target=download, daemon=True)
+    thread.start()
+    thread.join(timeout=60)
+    assert not thread.is_alive(), "the download did not end"
+    assert failures == []
+
+    downloader_mock._download_sequentially.assert_not_called()
+    assert len(list(tmp_path.iterdir())) == len(submissions)
+    # The configured number is not announced: the limit in force is, by the pipeline.
+    assert "Starting with 1 concurrent workers, adjustable during the run" in caplog.text
+    assert "Downloading with" not in caplog.text
+    assert "6 submissions processed, 0 filtered out, 0 failed" in caplog.text
 
 
 def test_download_without_skips_logs_no_summary(downloader_mock: MagicMock, caplog: pytest.LogCaptureFixture):

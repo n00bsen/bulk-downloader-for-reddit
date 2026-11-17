@@ -46,10 +46,16 @@ bdfr-gui
 
 Enter one username (or subreddit) per line, pick the output folder, and press **Start downloads**. Each name is downloaded as its own job in its own process, several at a time, with live per-job progress and a cancel button. Every option is saved between runs, so the window opens ready to go.
 
+Text can be pasted with the mouse as well as with Ctrl+V: every text field has a right-click menu with Cut, Copy, Paste and Select all, and the **Paste** button under the name box adds the clipboard's contents to the end of the list as new lines.
+
 Two separate settings control speed:
 
 - **Simultaneous downloads** — how many users/subreddits are processed at the same time.
 - **Connections per download** — how many files are fetched at once within a single job (the `--concurrency` option).
+
+Both can be changed while downloads are running, and the jobs already under way follow within a moment. A click on a box's arrows takes effect at once, and so do the Up and Down keys; a number you type or paste into it takes effect when you press Enter or leave the box (with Tab, or with a click anywhere else in the window), not while you are still typing. The mouse wheel does not change these two boxes, and Paste, from the menu or with Ctrl+V, puts only a whole number into them. A number outside the box's range (1 to 16 downloads, 1 to 32 connections) is replaced by the nearest one inside it, and anything that is not a number by the number that was there before. Lowering either one interrupts nothing. With fewer simultaneous downloads, the running jobs carry on and queued ones wait until fewer than the new number are running; with fewer connections, the posts being fetched are finished, all their files included, and new posts wait until fewer than the new number are in progress. Lowering the connections does not close the ones a job has already opened to a host; they stay available to it until it ends.
+
+A job started from the window goes through the same pipeline at every number of connections, so that the number can be raised later. With 1 connection it still downloads one post at a time and in order, but it is not the strictly sequential mode that `--concurrency 1` selects on the command line.
 
 Downloading the same users again is quick: posts that were already downloaded in full are skipped without contacting their hosts, and the job's last message says how many. A file you delete by hand is therefore not downloaded again unless **Re-check posts already downloaded** is ticked for that run. See [Skipping Posts Already Downloaded](#skipping-posts-already-downloaded).
 
